@@ -48,7 +48,7 @@ app.post("/encode-video-dash", async (req, res) => {
   -b:v:0 350k  -c:v:0 libx264 -filter:v:0 "scale=320:-1"  \
   -b:v:2 3000k -c:v:1 libx264 -filter:v:2 "scale=1280:-1" \
   -use_timeline 0 -use_template 1 -adaptation_sets "id=0,streams=v  id=1,streams=a" \
-      -f dash output.mpd`;
+      -f dash ${outputDASHPath}`;
   exec(ffmpegCommand, (error, stdout, stderr) => {
     if (error) {
       console.error("Error:", error);
