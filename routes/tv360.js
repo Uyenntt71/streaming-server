@@ -104,9 +104,9 @@ router.get("/get-link", async function (req, res, next) {
     "https://tv360.vn/public/v1/composite/get-link",
     {
       params,
-      headers: {
-        cookie: cookieJar.myCookies,
-      },
+      // headers: {
+      //   cookie: cookieJar.myCookies,
+      // },
     }
   );
 
@@ -160,30 +160,32 @@ router.get("/get-link/draft", async function (req, res, next) {
 });
 
 router.post("/login", async function (req, res, next) {
-  const response = await axiosInstance
-    .post(
-      "https://tv360.vn/public/v1/auth/login",
-      {
-        msisdn: "0335606978",
-        password: "831997",
-        grantType: "PASS",
+  const response = await axiosInstance.post(
+    "https://tv360.vn/public/v1/auth/login",
+    {
+      msisdn: "0335606978",
+      password: "831997",
+      grantType: "PASS",
+    },
+    // { ...reqStreamOptions },
+    {
+      withCredentials: true,
+      headers: {
+        Cookie:
+          "img-ext=avif; session-id=s%3Ab3f66e49-b3f3-44d7-b68f-e0b8c2c9f3f8.Pi7ZfnySJAAqGi8GdXB6AT0HrUeFONrYsv0B0M8%2Fcwc; NEXT_LOCALE=vi; device-id=s%3Aweb_fa87fdef-ca51-4034-af50-791e9266316b.5MrmKSmKYjMOsjagzzWT112nLLYNzj%2BkI70N3oCLh4g; shared-device-id=web_fa87fdef-ca51-4034-af50-791e9266316b; screen-size=s%3A1920x1080.uvjE9gczJ2ZmC0QdUMXaK%2BHUczLAtNpMQ1h3t%2Fq6m3Q; _gid=GA1.2.1294433775.1700615673; G_ENABLED_IDPS=google; accessed-in-day=s%3A1.E8d5%2BqHvtoRa81DxWMn1MgOyHoaIIEARCHxdA33Dyqw; auto-login=; acw_tc=2d31e24c60dc68f2cb718867cfdf25342f2c834c9fada39a61c8cd7d82667223; remember-user=; access-token=; refresh-token=; msisdn=; profile=; user-id=; _ga=GA1.1.204917889.1700615673; _ga_D7L53J0JMS=GS1.1.1700615672.1.1.1700618594.17.0.0; _ga_E5YP28Y8EF=GS1.1.1700615672.1.1.1700618594.0.0.0",
       },
-      // { ...reqStreamOptions },
-      {
-        withCredentials: true,
-        headers: {
-          Cookie:
-            "img-ext=avif; session-id=s%3Ab3f66e49-b3f3-44d7-b68f-e0b8c2c9f3f8.Pi7ZfnySJAAqGi8GdXB6AT0HrUeFONrYsv0B0M8%2Fcwc; NEXT_LOCALE=vi; device-id=s%3Aweb_fa87fdef-ca51-4034-af50-791e9266316b.5MrmKSmKYjMOsjagzzWT112nLLYNzj%2BkI70N3oCLh4g; shared-device-id=web_fa87fdef-ca51-4034-af50-791e9266316b; screen-size=s%3A1920x1080.uvjE9gczJ2ZmC0QdUMXaK%2BHUczLAtNpMQ1h3t%2Fq6m3Q; _gid=GA1.2.1294433775.1700615673; G_ENABLED_IDPS=google; accessed-in-day=s%3A1.E8d5%2BqHvtoRa81DxWMn1MgOyHoaIIEARCHxdA33Dyqw; auto-login=; acw_tc=2d31e24c60dc68f2cb718867cfdf25342f2c834c9fada39a61c8cd7d82667223; remember-user=; access-token=; refresh-token=; msisdn=; profile=; user-id=; _ga=GA1.1.204917889.1700615673; _ga_D7L53J0JMS=GS1.1.1700615672.1.1.1700618594.17.0.0; _ga_E5YP28Y8EF=GS1.1.1700615672.1.1.1700618594.0.0.0",
-        },
-      }
-    )
-    .then((response) => {
-      cookieJar.myCookies = response.headers["set-cookie"];
-      res.status(200).json(response.data);
-    })
-    .catch((err) => {
-      console.log(err);
-      res.status(500).json({ error: "Error log-in" });
-    });
+    }
+  );
+  axiosInstance.defaults.headers.cookie = response.headers["set-cookie"];
+
+  // .then((response) => {
+  //   cookieJar.myCookies = response.headers["set-cookie"];
+  //   res.status(200).json(response.data);
+  // })
+  // .catch((err) => {
+  //   console.log(err);
+  //   res.status(500).json({ error: "Error log-in" });
+  // });
+  res.status(200).json(response.data);
 });
 module.exports = router;
