@@ -5,12 +5,17 @@ const FormData = require("form-data");
 const curl = require("curlrequest");
 const { encryptAES, decryptAES } = require("../helper");
 const axios = require("axios").default;
-const axiosCookieJarSupport = require("axios-cookiejar-support").default;
-const tough = require("tough-cookie");
 
-axiosCookieJarSupport(axios);
+// 1. Get your axios instance ready
+function createAxios() {
+  return axios.create({ withCredentials: true });
+}
+const axiosInstance = createAxios();
 
-const cookieJar = new tough.CookieJar();
+// 2. Make sure you save the cookie after login.
+const cookieJar = {
+  myCookies: undefined,
+};
 
 const options = {
   method: "GET",
@@ -28,7 +33,7 @@ const reqStreamOptions = {
       "en-US,en;q=0.9,vi-VN;q=0.8,vi;q=0.7,fr-FR;q=0.6,fr;q=0.5,zh-TW;q=0.4,zh;q=0.3",
     "cache-control": "max-age=0",
     referrer:
-      "https://tv360.vn/movie/cong-to-vien-lach-luat-bad-prosecutor?m=16825&col=film_search&sect=FILM&page=search",
+      "https://tv360.vn/login?r=https%3A%2F%2Ftv360.vn%2Fmovie%2F21685%3Fm%3D21685%26col%3Dbanner%26sect%3DBANNER%26page%3Dhome",
     "sec-ch-ua":
       '"Chromium";v="116", "Not)A;Brand";v="24", "Google Chrome";v="116"',
     "sec-ch-ua-mobile": "?0",
@@ -85,6 +90,29 @@ router.get("/get-recommend", async function (req, res, next) {
   );
 });
 
+router.get("/get-link", async function (req, res, next) {
+  const params = {
+    id: 4, // vtv1 id=2
+    type: "live",
+    mod: "LIVE",
+    drm: "3,4",
+    secured: true,
+    t: Date.now() / 1000,
+  };
+
+  const response = await axiosInstance.get(
+    "https://tv360.vn/public/v1/composite/get-link",
+    {
+      params,
+      headers: {
+        cookie: cookieJar.myCookies,
+      },
+    }
+  );
+
+  res.status(200).json(response.data);
+});
+
 router.get("/get-link/draft", async function (req, res, next) {
   try {
     if (req.body.url) {
@@ -131,4 +159,31 @@ router.get("/get-link/draft", async function (req, res, next) {
   }
 });
 
+router.post("/login", async function (req, res, next) {
+  const response = await axiosInstance
+    .post(
+      "https://tv360.vn/public/v1/auth/login",
+      {
+        msisdn: "0335606978",
+        password: "831997",
+        grantType: "PASS",
+      },
+      // { ...reqStreamOptions },
+      {
+        withCredentials: true,
+        headers: {
+          Cookie:
+            "img-ext=avif; session-id=s%3Ab3f66e49-b3f3-44d7-b68f-e0b8c2c9f3f8.Pi7ZfnySJAAqGi8GdXB6AT0HrUeFONrYsv0B0M8%2Fcwc; NEXT_LOCALE=vi; device-id=s%3Aweb_fa87fdef-ca51-4034-af50-791e9266316b.5MrmKSmKYjMOsjagzzWT112nLLYNzj%2BkI70N3oCLh4g; shared-device-id=web_fa87fdef-ca51-4034-af50-791e9266316b; screen-size=s%3A1920x1080.uvjE9gczJ2ZmC0QdUMXaK%2BHUczLAtNpMQ1h3t%2Fq6m3Q; _gid=GA1.2.1294433775.1700615673; G_ENABLED_IDPS=google; accessed-in-day=s%3A1.E8d5%2BqHvtoRa81DxWMn1MgOyHoaIIEARCHxdA33Dyqw; auto-login=; acw_tc=2d31e24c60dc68f2cb718867cfdf25342f2c834c9fada39a61c8cd7d82667223; remember-user=; access-token=; refresh-token=; msisdn=; profile=; user-id=; _ga=GA1.1.204917889.1700615673; _ga_D7L53J0JMS=GS1.1.1700615672.1.1.1700618594.17.0.0; _ga_E5YP28Y8EF=GS1.1.1700615672.1.1.1700618594.0.0.0",
+        },
+      }
+    )
+    .then((response) => {
+      cookieJar.myCookies = response.headers["set-cookie"];
+      res.status(200).json(response.data);
+    })
+    .catch((err) => {
+      console.log(err);
+      res.status(500).json({ error: "Error log-in" });
+    });
+});
 module.exports = router;
