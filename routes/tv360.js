@@ -54,7 +54,7 @@ const reqStreamOptions = {
 router.get("/get-recommend", async function (req, res, next) {
   const requestBody = req.body;
   const url =
-    "https://tv360.vn/public/v1/watch-log/get-recommend?type=live&page=live&offset=0&id=recommend_live";
+    "https://tv360.vn/public/v1/watch-log/get-recommend?type=film&page=film&offset=0&id=recommend_film";
   curl.request(
     {
       ...options,
@@ -80,14 +80,13 @@ router.get("/get-recommend", async function (req, res, next) {
 
 router.get("/get-link", async function (req, res, next) {
   const res2 = await axios.post(`http://localhost:3080/tv360/login`);
-  console.log("res2", res2);
   if (res2.data.errorCode == 400) {
     res.status(400).json(res2.data);
   }
   const params = {
     id: req.query.id, // vtv1 id=2
-    type: "live",
-    mod: "LIVE",
+    type: "film",
+    mod: "FILM",
     drm: "3,4",
     secured: true,
     t: Date.now() / 1000,
@@ -112,7 +111,7 @@ router.post("/login", async function (req, res, next) {
       "https://tv360.vn/public/v1/auth/login",
       {
         msisdn: "0335606978",
-        password: "8319971",
+        password: "831997",
         grantType: "PASS",
       },
       {
@@ -128,7 +127,7 @@ router.post("/login", async function (req, res, next) {
       res.status(200).json(response.data);
     })
     .catch((err) => {
-      res.status(500).json({ error: "Error login" });
+      res.status(400).json({ error: "Error login" });
     });
 });
 
