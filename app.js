@@ -4,6 +4,7 @@ const cors = require("cors");
 require("dotenv").config();
 const path = require("path");
 const { exec } = require("child_process");
+const fs = require("fs");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,15 +21,23 @@ const userTV360 = require("./routes/tv360");
 app.use("/tv360", userTV360);
 
 app.post("/encode-video-hls", async (req, res) => {
+  const fileName = req.body.name;
+
   const publicFolderPath = path.join(__dirname, "public");
-  const inputFilePath = path.join(
-    publicFolderPath,
-    "video/Sticking-Seafarer_by-Jeremy-Ross.mp4"
-  );
-  const outputHLSPath = path.join(
-    publicFolderPath,
-    "hls/Sticking-Seafarer_by-Jeremy-Ross"
-  );
+  const inputFilePath = path.join(publicFolderPath, `video/${fileName}.mp4`);
+  const outputHLSPath = path.join(publicFolderPath, `hls/${fileName}`);
+
+  //remove old files
+  fs.readdir(outputHLSPath, (err, files) => {
+    if (err) throw err;
+
+    for (const file of files) {
+      fs.unlink(path.join(outputHLSPath, file), (error) => {
+        if (error) throw error;
+      });
+    }
+  });
+
   const ffmpegCommand = `ffmpeg -i ${inputFilePath} -map 0:v:0 -map 0:a:0 -map 0:v:0 -map 0:a:0 \
   -c:v h264 -profile:v main -crf 20 -sc_threshold 0 -g 48 -keyint_min 48 -c:a aac -ar 48000 \
   -filter:v:0 scale=w=640:h=360:force_original_aspect_ratio=decrease -maxrate:v:0 350k -bufsize:v:0 1200k -b:a:0 96k \
@@ -49,25 +58,49 @@ app.post("/encode-video-hls", async (req, res) => {
 });
 
 app.post("/encode-video-dash", async (req, res) => {
-  console.log("encode video dashssssss");
+  const fileName = req.body.name;
   const publicFolderPath = path.join(__dirname, "public");
-  const inputFilePath = path.join(publicFolderPath, "video/totoro2.mp4");
-  const outputDASHPath = path.join(publicFolderPath, "dash/totoro2");
-  const ffmpegCommand = `ffmpeg -i ${inputFilePath} \
-  -b:v:0 350k  -c:v:0 libx264 -filter:v:0 "scale=320:-1"  \
-  -b:v:2 3000k -c:v:1 libx264 -filter:v:2 "scale=1280:-1" \
-  -use_timeline 0 -use_template 1 -adaptation_sets "id=0,streams=v  id=1,streams=a" \
-      -f dash ${outputDASHPath}/output.mpd`;
+  const inputFilePath = path.join(publicFolderPath, `video/${fileName}.mp4`);
+  const outputDASHPath = path.join(publicFolderPath, `dash/${fileName}`);
+
+  //remove old files
+  fs.readdir(outputDASHPath, (err, files) => {
+    if (err) throw err;
+
+    for (const file of files) {
+      fs.unlink(path.join(outputDASHPath, file), (error) => {
+        if (error) throw error;
+      });
+    }
+  });
+
+  const ffmpegCommand = `ffmpeg -re -i ${inputFilePath} -map 0:v:0 -map 0:a:0 \
+-b:v:0 800k -profile:v:0 main \
+-b:v:1 300k -s:v:1 320x170 -profile:v:1 baseline -ar:a:1 22050 \
+-bf 1 -keyint_min 120 -g 120 -sc_threshold 0 -b_strategy 0 \
+-use_timeline 1 -use_template 1 -window_size 5 \
+-adaptation_sets "id=0,streams=v id=1,streams=a" \
+-f dash ${outputDASHPath}/output.mpd`;
+
+  // `ffmpeg -i ${inputFilePath} \
+  //   -map 0:v:0 -map 0:v:0 -map 0:v:0 -map 0:a\?:0  \
+  //   -b:v:0 350k  -c:v:0 libx264 -filter:v:0 "scale=320:-1"  \
+  //   -b:v:1 1000k -c:v:1 libx264 -filter:v:1 "scale=640:-1"  \
+  //   -b:v:2 3000k -c:v:2 libx264 -filter:v:2 "scale=1280:-1" \
+  //   -use_timeline 0 -use_template 1 -adaptation_sets "id=0,streams=v  id=1,streams=a" \
+  //       -f dash ${outputDASHPath}/output.mpd`;
+
   // const ffmpegCommand = `ffmpeg -re -i ${inputFilePath} -map 0 -map 0 -c:a aac -c:v libx264 \
   // -b:v:0 800k -b:v:1 300k -s:v:1 320x170 -profile:v:1 baseline \
   // -profile:v:0 main -bf 1 -keyint_min 120 -g 120 -sc_threshold 0 \
   // -b_strategy 0 -ar:a:1 22050 -use_timeline 1 -use_template 1 \
   // -window_size 5 -adaptation_sets "id=0,streams=v id=1,streams=a" \
   // -f dash ${outputDASHPath}/output.mpd`;
+
   exec(ffmpegCommand, (error, stdout, stderr) => {
     if (error) {
       console.error("Error:", error);
-      res.status(500).json({ error: "FFmpeg command failed" });
+      res.status(400).json({ error: "FFmpeg command failed" });
       return;
     }
 
@@ -75,7 +108,6 @@ app.post("/encode-video-dash", async (req, res) => {
     res.json({ message: "FFmpeg command executed successfully." });
   });
 
-  console.log("FFmpeg command", outputDASHPath, ffmpegCommand);
 });
 
 app.listen(PORT, () => {
