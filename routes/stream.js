@@ -4,7 +4,9 @@ const { executeQuery } = require("../services/db");
 
 router.get("/stream/list", async (req, res) => {
   try {
-    const streams = await executeQuery("SELECT * FROM ListStream");
+    const streams = await executeQuery(
+      "SELECT * FROM ListStream ORDER BY id ASC"
+    );
     res.json(streams);
   } catch (err) {
     res.status(500).json({ error: "Internal Server Error" });
