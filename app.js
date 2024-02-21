@@ -5,6 +5,7 @@ require("dotenv").config();
 const path = require("path");
 const { exec } = require("child_process");
 const fs = require("fs");
+const { executeQuery } = require("./services/db");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,8 +19,16 @@ const userRouter = require("./routes/stream");
 app.use("/", userRouter);
 
 const userTV360 = require("./routes/tv360");
+const { log } = require("console");
 app.use("/tv360", userTV360);
 
+/*
+- Add watermark and convert .mp4 to hls streams 360p, 480p, 720p, 1080p
+- Body format: 
+{
+  name: "totoro"
+}
+*/
 app.post("/encode-video-hls", async (req, res) => {
   const fileName = req.body.name;
 
@@ -66,7 +75,7 @@ app.post("/encode-video-hls", async (req, res) => {
 
   exec(ffmpegCommand, (error, stdout, stderr) => {
     if (error) {
-      console.error("Error:", error);
+      // console.error("Error:", error);
       res.status(500).json({ error: "FFmpeg command failed" });
       return;
     }
@@ -75,6 +84,55 @@ app.post("/encode-video-hls", async (req, res) => {
   });
 });
 
+/*
+- Add watermark and convert .mp4 to HLS streams 360p, 480p, 720p, 1080p
+- No need pass parameter
+- This API get list of filename from Database, then convert each file into HLS streams
+*/
+app.post("/encode-video-hls-all", async (req, res) => {
+  let streams = [];
+  try {
+    streams = await executeQuery("SELECT * FROM ListStream ORDER BY id ASC");
+  } catch (err) {
+    return res.status(400).send({ error: "Get Streams List Failed!" });
+  }
+
+  // Track completion status
+  let conversionsCompleted = 0;
+  let conversionErrors = [];
+
+  const convertStream = async (stream) => {
+    console.log("start convert file: ", stream.name);
+    try {
+      await convertMp4ToHLS(stream.name);
+      conversionsCompleted++;
+    } catch (e) {
+      console.error("Error converting stream:", stream.name, e);
+      conversionErrors.push({ name: stream.name, error: e.message });
+    }
+  };
+
+  const promises = streams.map(convertStream);
+
+  await Promise.all(promises);
+
+  // Check for errors
+  if (conversionErrors.length > 0) {
+    res
+      .status(400)
+      .send({ error: "Some conversions failed", details: conversionErrors });
+  } else {
+    res.status(200).send({ message: "All video is converted successfully." });
+  }
+});
+
+/*
+- Add watermark and convert .mp4 to dash streams 360p, 480p, 720p, 1080p
+- Body format: 
+{
+  name: "totoro"
+}
+*/
 app.post("/encode-video-dash", async (req, res) => {
   const fileName = req.body.name;
   const publicFolderPath = path.join(__dirname, "public");
@@ -84,14 +142,14 @@ app.post("/encode-video-dash", async (req, res) => {
 
   createEmptyFolder(outputDASHPath);
 
-
-  const ffmpegCommand = `ffmpeg -re -i ${inputFilePath} -map 0:v:0 -map 0:a:0 \
--b:v:0 800k -profile:v:0 main \
--b:v:1 300k -s:v:1 320x170 -profile:v:1 baseline -ar:a:1 22050 \
--bf 1 -keyint_min 120 -g 120 -sc_threshold 0 -b_strategy 0 \
--use_timeline 1 -use_template 1 -window_size 5 \
--adaptation_sets "id=0,streams=v id=1,streams=a" \
--f dash ${outputDASHPath}/output.mpd`;
+  //commands to convert to dash
+  //   const ffmpegCommand = `ffmpeg -re -i ${inputFilePath} -map 0:v:0 -map 0:a:0 \
+  // -b:v:0 800k -profile:v:0 main \
+  // -b:v:1 300k -s:v:1 320x170 -profile:v:1 baseline -ar:a:1 22050 \
+  // -bf 1 -keyint_min 120 -g 120 -sc_threshold 0 -b_strategy 0 \
+  // -use_timeline 1 -use_template 1 -window_size 5 \
+  // -adaptation_sets "id=0,streams=v id=1,streams=a" \
+  // -f dash ${outputDASHPath}/output.mpd`;
 
   // `ffmpeg -i ${inputFilePath} \
   //   -map 0:v:0 -map 0:v:0 -map 0:v:0 -map 0:a\?:0  \
@@ -108,17 +166,165 @@ app.post("/encode-video-dash", async (req, res) => {
   // -window_size 5 -adaptation_sets "id=0,streams=v id=1,streams=a" \
   // -f dash ${outputDASHPath}/output.mpd`;
 
+  //command to add watermark and convert to dash
+  const ffmpegCommand = `ffmpeg -re -i ${inputFilePath} \
+-i ${watermarkPath} \
+       -filter_complex "[0:v:0]scale=w=640:h=360:flags=lanczos[v0]; \
+       		[1:v]scale=w=28:h=30[watermark0]; \
+       		[v0][watermark0]overlay=W-w-20:10[ov0]; \
+                        [0:v:0]scale=w=854:h=480:flags=lanczos[v1]; \
+                        [1:v]scale=w=51:h=55[watermark1]; \
+                        [v1][watermark1]overlay=W-w-38:20[ov1]; \
+                        [0:v:0]scale=w=1280:h=720:flags=lanczos[v2]; \
+                        [1:v]scale=w=76:h=82[watermark2]; \
+                        [v2][watermark2]overlay=W-w-66:36[ov2]; \
+                        [0:v:0]scale=w=1920:h=1080:flags=lanczos[v3]; \
+                        [1:v]scale=w=114:h=123[watermark3]; \
+                        [v3][watermark3]overlay=W-w-100:54[ov3]" \
+-map "[ov0]" -map 0:a:0 -c:v:0 libx264 -b:v:0 800k -b:a:0 64k -bufsize:v:0 1200k \
+       -map "[ov1]" -map 0:a:0 -c:v:0 libx264 -b:v:0 1400k -b:a:0 128k -bufsize:v:0 2100k \
+       -map "[ov2]" -map 0:a:0 -c:v:0 libx264 -b:v:0 2800k -b:a:0 192k -bufsize:v:0 4200k \
+       -map "[ov3]" -map 0:a:0 -c:v:0 libx264 -b:v:0 4500k -b:a:0 256k -bufsize:v:0 7500k \
+-bf 1 -keyint_min 120 -g 120 -sc_threshold 0 -b_strategy 0 \
+-use_timeline 1 -use_template 1 -window_size 5 \
+-adaptation_sets "id=0,streams=v id=1,streams=a" \
+-f dash ${outputDASHPath}/output.mpd`;
+
   exec(ffmpegCommand, (error, stdout, stderr) => {
     if (error) {
-      console.error("Error:", error);
+      // console.error("Error:", error);
       res.status(400).json({ error: "FFmpeg command failed" });
       return;
     }
 
-    console.log("FFmpeg command executed successfully.");
     res.json({ message: "FFmpeg command executed successfully." });
   });
 });
+
+/*
+- Add watermark and convert .mp4 to dash streams 360p, 480p, 720p, 1080p
+- No need pass parameter
+- This API get list of filename from Database, then convert each file into dash streams
+*/
+app.post("/encode-video-dash-all", async (req, res) => {
+  let streams = [];
+  try {
+    streams = await executeQuery("SELECT * FROM ListStream ORDER BY id ASC");
+  } catch (err) {
+    return res.status(400).send({ error: "Get Streams List Failed!" });
+  }
+
+  // Track completion status
+  let conversionsCompleted = 0;
+  let conversionErrors = [];
+
+  const convertStream = async (stream) => {
+    console.log("start convert file: ", stream.name);
+    try {
+      await convertMp4ToDash(stream.name);
+      conversionsCompleted++;
+    } catch (e) {
+      console.error("Error converting stream:", stream.name, e);
+      conversionErrors.push({ name: stream.name, error: e.message });
+    }
+  };
+
+  const promises = streams.map(convertStream);
+
+  await Promise.all(promises);
+
+  // Check for errors
+  if (conversionErrors.length > 0) {
+    res
+      .status(400)
+      .send({ error: "Some conversions failed", details: conversionErrors });
+  } else {
+    res.status(200).send({ message: "All video is converted successfully." });
+  }
+});
+
+async function convertMp4ToHLS(fileName) {
+  const publicFolderPath = path.join(__dirname, "public");
+  const inputFilePath = path.join(publicFolderPath, `video/${fileName}.mp4`);
+  const outputHLSPath = path.join(publicFolderPath, `hls/${fileName}`);
+  const watermarkPath = path.join(publicFolderPath, "LogoCDN.svg");
+
+  createEmptyFolder(outputHLSPath);
+
+  //command to add watermark and convert to dash
+  const ffmpegCommand = `ffmpeg -i ${inputFilePath} \
+-i ${watermarkPath} \
+-filter_complex "[0:v:0]scale=w=640:h=360:flags=lanczos[v0]; \
+[1:v]scale=w=28:h=30[watermark0]; \
+[0:v:0]scale=w=854:h=480:flags=lanczos[v1]; \
+[1:v]scale=w=51:h=55[watermark1]; \
+[0:v:0]scale=w=1280:h=720:flags=lanczos[v2]; \
+[1:v]scale=w=76:h=82[watermark2]; \
+[0:v:0]scale=w=1920:h=1080:flags=lanczos[v3]; \
+[1:v]scale=w=114:h=123[watermark3]; \
+[v0][watermark0]overlay=10:10[ov0]; \
+[v1][watermark1]overlay=10:10[ov1]; \
+[v2][watermark2]overlay=10:10[ov2]; \
+[v3][watermark3]overlay=10:10[ov3]" \
+-map "[ov0]" -map 0:a:0? -c:v:0 libx264 -b:v:0 800k -b:a:0 64k -bufsize:v:0 1200k \
+-map "[ov1]" -map 0:a:0? -c:v:0 libx264 -b:v:0 1400k -b:a:0 128k -bufsize:v:0 2100k \
+-map "[ov2]" -map 0:a:0? -c:v:0 libx264 -b:v:0 2800k -b:a:0 192k -bufsize:v:0 4200k \
+-map "[ov3]" -map 0:a:0? -c:v:0 libx264 -b:v:0 4500k -b:a:0 256k -bufsize:v:0 7500k \
+-var_stream_map "v:0,a:0,name:360p v:1,a:1,name:480p v:2,a:2,name:720p v:3,a:3,name:1080p" \
+-hls_time 4 -hls_list_size 10 -start_number 1 -master_pl_name master.m3u8 \
+-hls_segment_filename "${outputHLSPath}/%v/segment%d.ts" -f hls -hls_flags delete_segments ${outputHLSPath}/%v/index.m3u8`;
+
+  return new Promise((resolve, reject) => {
+    exec(ffmpegCommand, (error) => {
+      if (error) {
+        reject(`FFmpeg command executed failed ${fileName}`);
+      }
+      resolve(`FFmpeg command executed successfully ${fileName}`);
+    });
+  });
+}
+
+async function convertMp4ToDash(fileName) {
+  const publicFolderPath = path.join(__dirname, "public");
+  const inputFilePath = path.join(publicFolderPath, `video/${fileName}.mp4`);
+  const outputDASHPath = path.join(publicFolderPath, `dash/${fileName}`);
+  const watermarkPath = path.join(publicFolderPath, "LogoCDN.svg");
+
+  createEmptyFolder(outputDASHPath);
+
+  //command to add watermark and convert to dash
+  const ffmpegCommand = `ffmpeg -i ${inputFilePath} \
+-i ${watermarkPath} \
+       -filter_complex "[0:v:0]scale=w=640:h=360:flags=lanczos[v0]; \
+       		[1:v]scale=w=28:h=30[watermark0]; \
+       		[v0][watermark0]overlay=W-w-20:10[ov0]; \
+                        [0:v:0]scale=w=854:h=480:flags=lanczos[v1]; \
+                        [1:v]scale=w=51:h=55[watermark1]; \
+                        [v1][watermark1]overlay=W-w-38:20[ov1]; \
+                        [0:v:0]scale=w=1280:h=720:flags=lanczos[v2]; \
+                        [1:v]scale=w=76:h=82[watermark2]; \
+                        [v2][watermark2]overlay=W-w-66:36[ov2]; \
+                        [0:v:0]scale=w=1920:h=1080:flags=lanczos[v3]; \
+                        [1:v]scale=w=114:h=123[watermark3]; \
+                        [v3][watermark3]overlay=W-w-100:54[ov3]" \
+-map "[ov0]" -map 0:a:0 -c:v:0 libx264 -b:v:0 800k -b:a:0 64k -bufsize:v:0 1200k \
+       -map "[ov1]" -map 0:a:0 -c:v:0 libx264 -b:v:0 1400k -b:a:0 128k -bufsize:v:0 2100k \
+       -map "[ov2]" -map 0:a:0 -c:v:0 libx264 -b:v:0 2800k -b:a:0 192k -bufsize:v:0 4200k \
+       -map "[ov3]" -map 0:a:0 -c:v:0 libx264 -b:v:0 4500k -b:a:0 256k -bufsize:v:0 7500k \
+-bf 1 -keyint_min 120 -g 120 -sc_threshold 0 -b_strategy 0 \
+-use_timeline 1 -use_template 1 -window_size 5 \
+-adaptation_sets "id=0,streams=v id=1,streams=a" \
+-f dash ${outputDASHPath}/output.mpd`;
+
+  return new Promise((resolve, reject) => {
+    exec(ffmpegCommand, (error) => {
+      if (error) {
+        reject(`FFmpeg command executed failed ${fileName}`);
+      }
+      resolve(`FFmpeg command executed successfully ${fileName}`);
+    });
+  });
+}
 
 function createEmptyFolder(folderPath) {
   if (!fs.existsSync(folderPath)) {

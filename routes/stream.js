@@ -9,7 +9,7 @@ router.get("/stream/list", async (req, res) => {
     );
     res.json(streams);
   } catch (err) {
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(400).json({ error: "Get Streams List Failed!" });
   }
 });
 
@@ -21,7 +21,7 @@ router.get("/stream/:id", async (req, res) => {
     );
     res.json(streams[0]);
   } catch (err) {
-    res.status(400).json({ error: "Get stream fail" });
+    res.status(400).json({ error: "Get Stream Failed!" });
   }
 });
 
