@@ -1,11 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { executeQuery } = require("../services/db");
+const { executeQuery, execPostgreQuery } = require("../services/db");
 
 router.get("/stream/list", async (req, res) => {
   try {
-    const streams = await executeQuery(
-      "SELECT * FROM ListStream ORDER BY id ASC"
+    const streams = await execPostgreQuery(
+      "SELECT * FROM streaming.list_stream ORDER BY id ASC"
     );
     res.json(streams);
   } catch (err) {
@@ -17,7 +17,7 @@ router.get("/stream/:id", async (req, res) => {
   const streamId = req.params.id;
   try {
     const streams = await executeQuery(
-      `SELECT * FROM ListStream WHERE id=${streamId}`
+      `SELECT * FROM list_stream WHERE id=${streamId}`
     );
     res.json(streams[0]);
   } catch (err) {
